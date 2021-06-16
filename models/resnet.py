@@ -4,6 +4,10 @@ import torchvision.transforms as transforms
 import math
 from .modules.se import SEBlock
 from .modules.checkpoint import CheckpointModule
+
+from .modules.conv2d_nn import ConvOptions, AConv2d
+
+
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
@@ -15,7 +19,7 @@ __all__ = ['resnet', 'resnet_se']
 
 def init_model(model):
     for m in model.modules():
-        if isinstance(m, nn.Conv2d):
+        if isinstance(m, nn.Conv2d) or isinstance(m, AConv2d):
             n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
             m.weight.data.normal_(0, math.sqrt(2. / n))
         elif isinstance(m, nn.BatchNorm2d):
@@ -72,22 +76,23 @@ def linear_scale(lr0, lrT, T, t0=0):
     return "lambda t: {'lr': max(%s + (t - %s) * %s, 0)}" % (lr0, t0, rate)
 
 
-def conv3x3(in_planes, out_planes, stride=1, groups=1, bias=False):
+def conv3x3(in_planes, out_planes, stride=1, groups=1, bias=False, conv_options = None):
     "3x3 convolution with padding"
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, groups=groups, bias=bias)
+    # return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    #                  padding=1, groups=groups, bias=bias)
 
+    return AConv2d(in_planes, out_planes, kernel_size=3, stride=stride, bias=False, conv_options = conv_options)
 
 class BasicBlock(nn.Module):
 
     def __init__(self, inplanes, planes,  stride=1, expansion=1,
-                 downsample=None, groups=1, residual_block=None, dropout=0.):
+                 downsample=None, groups=1, residual_block=None, dropout=0.0 , conv_options = None):
         super(BasicBlock, self).__init__()
         dropout = 0 if dropout is None else dropout
-        self.conv1 = conv3x3(inplanes, planes, stride, groups=groups)
+        self.conv1 = conv3x3(inplanes, planes, stride, groups=groups, conv_options = conv_options)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, expansion * planes, groups=groups)
+        self.conv2 = conv3x3(planes, expansion * planes, groups=groups, conv_options = conv_options)
         self.bn2 = nn.BatchNorm2d(expansion * planes)
         self.downsample = downsample
         self.residual_block = residual_block
@@ -120,16 +125,21 @@ class BasicBlock(nn.Module):
 
 class Bottleneck(nn.Module):
 
-    def __init__(self, inplanes, planes,  stride=1, expansion=4, downsample=None, groups=1, residual_block=None, dropout=0.):
+    def __init__(self, inplanes, planes,  stride=1, expansion=4, downsample=None, groups=1, residual_block=None, dropout=0.0, conv_options = None):
         super(Bottleneck, self).__init__()
         dropout = 0 if dropout is None else dropout
-        self.conv1 = nn.Conv2d(
-            inplanes, planes, kernel_size=1, bias=False)
+        ##self.conv1 = nn.Conv2d( inplanes, planes, kernel_size=1, bias=False)
+        self.conv1 = AConv2d(inplanes, planes, kernel_size=1, stride=1, bias=False, conv_options = conv_options)
+
+
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = conv3x3(planes, planes, stride=stride, groups=groups)
+        self.conv2 = conv3x3(planes, planes, stride=stride, groups=groups, conv_options = conv_options)
+
         self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(
-            planes, planes * expansion, kernel_size=1, bias=False)
+
+        ##self.conv3 = nn.Conv2d(planes, planes * expansion, kernel_size=1, bias=False)
+        self.conv3 = AConv2d(planes, planes * expansion, kernel_size=1, stride=1, bias=False, conv_options = conv_options)
+
         self.bn3 = nn.BatchNorm2d(planes * expansion)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(dropout)
@@ -170,13 +180,14 @@ class ResNet(nn.Module):
     def __init__(self):
         super(ResNet, self).__init__()
 
-    def _make_layer(self, block, planes, blocks, expansion=1, stride=1, groups=1, residual_block=None, dropout=None, mixup=False):
+    def _make_layer(self, block, planes, blocks, expansion=1, stride=1, groups=1, residual_block=None, dropout=None, mixup=False, conv_options = None):
         downsample = None
         out_planes = planes * expansion
         if stride != 1 or self.inplanes != out_planes:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, out_planes,
-                          kernel_size=1, stride=stride, bias=False),
+                # nn.Conv2d(self.inplanes, out_planes,
+                #           kernel_size=1, stride=stride, bias=False),
+                AConv2d(self.inplanes, out_planes, kernel_size=1, stride=stride, bias=False, conv_options = conv_options),
                 nn.BatchNorm2d(planes * expansion),
             )
         if residual_block is not None:
@@ -184,11 +195,11 @@ class ResNet(nn.Module):
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, expansion=expansion,
-                            downsample=downsample, groups=groups, residual_block=residual_block, dropout=dropout))
+                            downsample=downsample, groups=groups, residual_block=residual_block, dropout=dropout, conv_options=conv_options))
         self.inplanes = planes * expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes, expansion=expansion, groups=groups,
-                                residual_block=residual_block, dropout=dropout))
+                                residual_block=residual_block, dropout=dropout, conv_options= conv_options))
         if mixup:
             layers.append(MixUp())
         return nn.Sequential(*layers)
@@ -223,8 +234,7 @@ class ResNet_imagenet(ResNet):
                  base_devices=4, base_device_batch=64, base_duplicates=1, base_image_size=224, mix_size_regime='D+'):
         super(ResNet_imagenet, self).__init__()
         self.inplanes = inplanes
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
-                               bias=False)
+        self.conv1 = AConv2d(3, self.inplanes, kernel_size=7, stride=2, bias=False)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -321,22 +331,30 @@ class ResNet_cifar(ResNet):
 
     def __init__(self, num_classes=10, inplanes=16,
                  block=BasicBlock, depth=18, width=[16, 32, 64],
-                 groups=[1, 1, 1], residual_block=None, regime='normal', dropout=None, mixup=False):
+                 groups=[1, 1, 1], residual_block=None, regime='normal', dropout=None, mixup=False, chunk_sizes= [1,1,1], acc_bits = [0,0,0]):
         super(ResNet_cifar, self).__init__()
+
+        conv_opts = ConvOptions(chunk_sizes[0], acc_bits[0]) 
+        conv_opts_i = ConvOptions(chunk_sizes[1], acc_bits[1]) 
+        conv_opts_w = ConvOptions(chunk_sizes[2], acc_bits[2]) 
+
+        conv_options = (conv_opts, conv_opts_i, conv_opts_w)
+
         self.inplanes = inplanes
         n = int((depth - 2) / 6)
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1,
-                               bias=False)
+
+        self.conv1 =  AConv2d(3, self.inplanes, kernel_size=3, stride=1, bias=False, conv_options = conv_options)
+
         self.bn1 = nn.BatchNorm2d(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = lambda x: x
 
         self.layer1 = self._make_layer(block, width[0], n, groups=groups[0],
-                                       residual_block=residual_block, dropout=dropout, mixup=mixup)
+                                       residual_block=residual_block, dropout=dropout, mixup=mixup, conv_options = conv_options)
         self.layer2 = self._make_layer(block, width[1], n, stride=2, groups=groups[1],
-                                       residual_block=residual_block, dropout=dropout, mixup=mixup)
+                                       residual_block=residual_block, dropout=dropout, mixup=mixup, conv_options = conv_options)
         self.layer3 = self._make_layer(block, width[2], n, stride=2, groups=groups[2],
-                                       residual_block=residual_block, dropout=dropout, mixup=mixup)
+                                       residual_block=residual_block, dropout=dropout, mixup=mixup, conv_options = conv_options)
         self.layer4 = lambda x: x
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(width[-1], num_classes)
