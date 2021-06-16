@@ -231,10 +231,19 @@ class ResNet_imagenet(ResNet):
                  block=Bottleneck, residual_block=None, layers=[3, 4, 23, 3],
                  width=[64, 128, 256, 512], expansion=4, groups=[1, 1, 1, 1],
                  regime='normal', scale_lr=1, ramp_up_lr=True, ramp_up_epochs=5, checkpoint_segments=0, mixup=False, epochs=90,
-                 base_devices=4, base_device_batch=64, base_duplicates=1, base_image_size=224, mix_size_regime='D+'):
+                 base_devices=4, base_device_batch=64, base_duplicates=1, base_image_size=224, mix_size_regime='D+',
+                 chunk_sizes= [1,1,1], acc_bits = [0,0,0]):
+
+
+        conv_opts = ConvOptions(chunk_sizes[0], acc_bits[0]) 
+        conv_opts_i = ConvOptions(chunk_sizes[1], acc_bits[1]) 
+        conv_opts_w = ConvOptions(chunk_sizes[2], acc_bits[2]) 
+
+        conv_options = (conv_opts, conv_opts_i, conv_opts_w)
+
         super(ResNet_imagenet, self).__init__()
         self.inplanes = inplanes
-        self.conv1 = AConv2d(3, self.inplanes, kernel_size=7, stride=2, bias=False)
+        self.conv1 = AConv2d(3, self.inplanes, kernel_size=7, stride=2, bias=False, conv_options = conv_options)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -242,7 +251,7 @@ class ResNet_imagenet(ResNet):
         for i in range(len(layers)):
             layer = self._make_layer(block=block, planes=width[i], blocks=layers[i], expansion=expansion,
                                      stride=1 if i == 0 else 2, residual_block=residual_block, groups=groups[i],
-                                     mixup=mixup)
+                                     mixup=mixup, conv_options = conv_options)
             if checkpoint_segments > 0:
                 layer_checkpoint_segments = min(checkpoint_segments, layers[i])
                 layer = CheckpointModule(layer, layer_checkpoint_segments)
