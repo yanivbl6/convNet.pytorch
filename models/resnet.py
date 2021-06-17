@@ -5,7 +5,7 @@ import math
 from .modules.se import SEBlock
 from .modules.checkpoint import CheckpointModule
 
-from .modules.conv2d_nn import ConvOptions, AConv2d
+from .modules.conv2d_nn import ConvOptions, AllConvOptions, AConv2d
 
 
 import os
@@ -232,14 +232,10 @@ class ResNet_imagenet(ResNet):
                  width=[64, 128, 256, 512], expansion=4, groups=[1, 1, 1, 1],
                  regime='normal', scale_lr=1, ramp_up_lr=True, ramp_up_epochs=5, checkpoint_segments=0, mixup=False, epochs=90,
                  base_devices=4, base_device_batch=64, base_duplicates=1, base_image_size=224, mix_size_regime='D+',
-                 chunk_sizes= [1,1,1], acc_bits = [0,0,0]):
+                 chunk_sizes= [1,1,1], acc_bits = [0,0,0], N = 0, M =0):
 
 
-        conv_opts = ConvOptions(chunk_sizes[0], acc_bits[0]) 
-        conv_opts_i = ConvOptions(chunk_sizes[1], acc_bits[1]) 
-        conv_opts_w = ConvOptions(chunk_sizes[2], acc_bits[2]) 
-
-        conv_options = (conv_opts, conv_opts_i, conv_opts_w)
+        conv_options = AllConvOptions(chunk_sizes, acc_bits, M, N)
 
         super(ResNet_imagenet, self).__init__()
         self.inplanes = inplanes
@@ -340,14 +336,12 @@ class ResNet_cifar(ResNet):
 
     def __init__(self, num_classes=10, inplanes=16,
                  block=BasicBlock, depth=18, width=[16, 32, 64],
-                 groups=[1, 1, 1], residual_block=None, regime='normal', dropout=None, mixup=False, chunk_sizes= [1,1,1], acc_bits = [0,0,0]):
+                 groups=[1, 1, 1], residual_block=None, regime='normal', dropout=None, mixup=False, 
+                 chunk_sizes= [1,1,1], acc_bits = [0,0,0], N = 0, M = 0):
         super(ResNet_cifar, self).__init__()
 
-        conv_opts = ConvOptions(chunk_sizes[0], acc_bits[0]) 
-        conv_opts_i = ConvOptions(chunk_sizes[1], acc_bits[1]) 
-        conv_opts_w = ConvOptions(chunk_sizes[2], acc_bits[2]) 
 
-        conv_options = (conv_opts, conv_opts_i, conv_opts_w)
+        conv_options = AllConvOptions(chunk_sizes, acc_bits, M, N)
 
         self.inplanes = inplanes
         n = int((depth - 2) / 6)
