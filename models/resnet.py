@@ -22,9 +22,10 @@ def init_model(model):
         if isinstance(m, nn.Conv2d) or isinstance(m, AConv2d):
             n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
             m.weight.data.normal_(0, math.sqrt(2. / n))
-        elif isinstance(m, nn.BatchNorm2d):
-            m.weight.data.fill_(1)
-            m.bias.data.zero_()
+        # elif isinstance(m, nn.BatchNorm2d):
+        #     m.weight.data.fill_(1)
+        #     m.bias.data.zero_()
+
     for m in model.modules():
         if isinstance(m, Bottleneck):
             nn.init.constant_(m.bn3.weight, 0)
@@ -121,7 +122,6 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
 
         return out
-
 
 class Bottleneck(nn.Module):
 
@@ -232,10 +232,10 @@ class ResNet_imagenet(ResNet):
                  width=[64, 128, 256, 512], expansion=4, groups=[1, 1, 1, 1],
                  regime='normal', scale_lr=1, ramp_up_lr=True, ramp_up_epochs=5, checkpoint_segments=0, mixup=False, epochs=90,
                  base_devices=4, base_device_batch=64, base_duplicates=1, base_image_size=224, mix_size_regime='D+',
-                 chunk_sizes= [1,1,1], acc_bits = [0,0,0], N = 0, M =0):
+                 chunks= [1,1,1], acc_bits = [0,0,0], N = 0, M =0, fix= 0):
 
 
-        conv_options = AllConvOptions(chunk_sizes, acc_bits, M, N)
+        conv_options = AllConvOptions(chunks, acc_bits, M, N,fix)
 
         super(ResNet_imagenet, self).__init__()
         self.inplanes = inplanes
@@ -337,11 +337,11 @@ class ResNet_cifar(ResNet):
     def __init__(self, num_classes=10, inplanes=16,
                  block=BasicBlock, depth=18, width=[16, 32, 64],
                  groups=[1, 1, 1], residual_block=None, regime='normal', dropout=None, mixup=False, 
-                 chunk_sizes= [1,1,1], acc_bits = [0,0,0], N = 0, M = 0):
+                 chunks= [1,1,1], acc_bits = [0,0,0], N = 0, M = 0, fix= 0 , fixup = False):
         super(ResNet_cifar, self).__init__()
 
 
-        conv_options = AllConvOptions(chunk_sizes, acc_bits, M, N)
+        conv_options = AllConvOptions(chunks, acc_bits, M, N,fix)
 
         self.inplanes = inplanes
         n = int((depth - 2) / 6)
@@ -403,6 +403,15 @@ class ResNet_cifar(ResNet):
             ]
 
 
+class GN(torch.nn.GroupNorm):
+    def __init__(self, n):
+        super(GN, self).__init__(n, n)
+
+class GN8(torch.nn.GroupNorm):
+    def __init__(self, n):
+        super(GN8, self).__init__(8, n)
+
+
 def resnet(**config):
     dataset = config.pop('dataset', 'imagenet')
     if config.pop('quantize', False):
@@ -418,6 +427,14 @@ def resnet(**config):
             torch.nn.BatchNorm2d = L1BatchNorm2d
         if bn_norm == 'TopK':
             torch.nn.BatchNorm2d = TopkBatchNorm2d
+        if bn_norm == 'group':
+            torch.nn.BatchNorm2d = GN
+        if bn_norm == 'group8':
+            torch.nn.BatchNorm2d = GN8
+        if bn_norm == 'fixup':
+            config['fixup'] = True
+
+
 
     if 'imagenet' in dataset:
         config.setdefault('num_classes', 1000)
