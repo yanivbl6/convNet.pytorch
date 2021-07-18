@@ -130,22 +130,7 @@ def main():
     main_worker(args)
 
 
-def main_worker(args):
-    global best_prec1, dtype
-    best_prec1 = 0
-    dtype = torch_dtypes.get(args.dtype)
-    torch.manual_seed(args.seed)
-    time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    if args.evaluate:
-        args.results_dir = '/tmp'
-
-
-    model_config = {'dataset': args.dataset}
-
-    if args.model_config is not '':
-        model_config = dict(model_config, **literal_eval(args.model_config))
-
-    ##autoname
+def auto_name(args, model_config):
     depth = model_config["depth"]
     fname = f"{args.model}{depth}_{args.dataset}_"
     if model_config["acc_bits"]:
@@ -182,6 +167,13 @@ def main_worker(args):
             fname = fname + f"_GN"
         elif  model_config['bn_norm'] == "group8":
             fname = fname + f"_GN8"
+        elif  model_config['bn_norm'] == "fixup":
+            if args.mixup:
+                alpha_fixup = int(args.mixup * 100)
+                fname = fname + f"_fixup{alpha_fixup}"
+            else:
+                fname = fname + f"_fixupX"
+
         else :
             fname = fname + f"_BN"
     else:
@@ -192,7 +184,27 @@ def main_worker(args):
     if not args.save is '':
         fname = fname + f"_{args.save}"
 
+    return fname
+
+def main_worker(args):
+    global best_prec1, dtype
+    best_prec1 = 0
+    dtype = torch_dtypes.get(args.dtype)
+    torch.manual_seed(args.seed)
+    time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    if args.evaluate:
+        args.results_dir = '/tmp'
+
+
+    model_config = {'dataset': args.dataset, 'batch': args.batch_size}
+
+    if args.model_config is not '':
+        model_config = dict(model_config, **literal_eval(args.model_config))
+
+    ##autoname
+    fname = auto_name(args, model_config)
     args.save = fname
+
     print(fname)
 
     save_path = path.join(args.results_dir, args.save)
@@ -413,7 +425,7 @@ def main_worker(args):
                          legend=['gradient L2 norm'],
                          title='Gradient Norm', ylabel='value')
         results.save()
-    logging.info('\nBest Validation Accuracy (top1): {best_prec1}')
+    logging.info(f'\nBest Validation Accuracy (top1): {best_prec1}')
 
 if __name__ == '__main__':
     main()
